@@ -1,0 +1,11 @@
+{
+  "manifest_version": 3,
+  "name": "Personal Memory Form Capture",
+  "version": "0.1.0",
+  "description": "Capture field changes only in a form tab you explicitly pair with your private memory vault.",
+  "permissions": ["storage", "scripting", "activeTab", "alarms", "webNavigation"],
+  "optional_host_permissions": ["https://*/*", "http://*/*"],
+  "background": { "service_worker": "background.js", "type": "module" },
+  "action": { "default_title": "Memory form capture", "default_popup": "popup.html" },
+  "content_security_policy": { "extension_pages": "script-src 'self'; object-src 'none'" }
+}

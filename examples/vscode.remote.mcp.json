@@ -1,0 +1,9 @@
+{
+  "inputs": [
+    { "id": "memoryUrl", "type": "promptString", "description": "Deployed memory MCP URL, including /mcp" },
+    { "id": "memoryClientId", "type": "promptString", "description": "Pre-registered OAuth client ID for VS Code" }
+  ],
+  "servers": {
+    "personal-memory": { "type": "http", "url": "${input:memoryUrl}", "oauth": { "clientId": "${input:memoryClientId}" } }
+  }
+}

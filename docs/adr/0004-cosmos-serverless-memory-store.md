@@ -1,0 +1,17 @@
+# Cosmos DB serverless as the primary memory store
+
+Status: accepted, 2026-11-15. Supersedes [ADR 0001](0001-postgresql-primary-memory-store.md).
+
+The user selected Cosmos DB after comparing the cost of provisioned PostgreSQL with the expected intermittent personal-memory workload. Use Azure Cosmos DB for NoSQL in serverless mode, with Azure Functions unchanged as the MCP host. There is no dual-write PostgreSQL backend and no migration of live cloud data: the earlier cloud PostgreSQL resource never provisioned successfully. Existing tests used synthetic local data.
+
+Partition the generic document graph by owner vault so sources, claims, evidence, forms, approvals, idempotency records and deletion receipts can use same-partition transactional batches. Keep identity-to-vault mappings in a separate container, read-only to the runtime identity. Enforce vault scoping in the trusted service; Cosmos has no database row-level-security equivalent. Use Strong consistency, metadata ETag checks, and a resumable write-ahead journal with a maintenance barrier for mutations exceeding batch limits. Large changes become visible through the service only after journal completion.
+
+Keep 1536-dimensional embeddings next to claims and use a native DiskANN index, indexed keyword tokens, reciprocal-rank fusion and bounded graph traversal. Avoid adding Azure AI Search, a graph database, persistent summary copies, or full-text feature prerequisites for this pilot. L0/L1/L2 remain derived views. Edits/deletes preserve the same exact-scope chat approval contract.
+
+Azure disables account keys and public network access. A private endpoint connects the Functions VNet; managed identity has memory-container write access and identity-directory read access. Administrative invitations require a separate Entra principal. No database passwords or new Key Vault secrets are necessary.
+
+Tradeoffs: serverless bills consumed RUs and storage, supports one region, and has a 5,000 RU/s ceiling per physical partition. A vault is one logical partition, limited to 20 GB. Strong reads cost more RUs than weaker consistency. Native DiskANN is approximate and uses a scan below its index threshold (1,000 vectors), so small collections need cost measurement. Keyword matching is token based rather than PostgreSQL full-text ranking. Private endpoint/DNS, Functions storage, backup operations and AI inference remain separately billed. This is a fit for the pilot’s idle-heavy traffic, not a guarantee that Cosmos is always cheaper.
+
+The emulator verifies data/workflow behavior but does not enforce production authentication or establish production RU/latency numbers. Live Cosmos provisioning, private DNS, managed-identity grants, model quality and OAuth client integrations require Azure verification.
+
+References: [serverless billing and limits](https://learn.microsoft.com/en-us/azure/cosmos-db/serverless), [transactional batches](https://learn.microsoft.com/en-us/azure/cosmos-db/transactional-batch), [service limits](https://learn.microsoft.com/en-us/azure/cosmos-db/concepts-limits), [native vector search](https://learn.microsoft.com/en-us/azure/cosmos-db/vector-search), [data-plane roles](https://learn.microsoft.com/en-us/azure/cosmos-db/nosql/how-to-connect-role-based-access-control), [continuous backup and restore](https://learn.microsoft.com/en-us/azure/cosmos-db/continuous-backup-restore-introduction).

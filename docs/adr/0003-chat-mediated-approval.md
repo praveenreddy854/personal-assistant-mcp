@@ -1,0 +1,3 @@
+# Chat-mediated approval for edits and deletion
+
+Authorized clients may read, add memories, and capture drafts, but changes to existing remembered facts and deletion require approval for a concrete server-stored proposal. The user chose approval relayed through the calling agent's chat, accepting reliance on that client's faithful reporting rather than an independent browser confirmation page; a fully specified direct instruction counts as approval, while inferred or broader changes require an additional confirmation. Bind proposals to the owner, client, revision, and expiration, and never let approval substitute a different payload.

@@ -1,0 +1,33 @@
+{
+  "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentParameters.json#",
+  "contentVersion": "1.0.0.0",
+  "parameters": {
+    "location": {
+      "value": "centralus"
+    },
+    "prefix": {
+      "value": "examplememory"
+    },
+    "authIssuer": {
+      "value": "https://TENANT.ciamlogin.com/TENANT_ID/v2.0"
+    },
+    "authAudience": {
+      "value": "MEMORY_API_APPLICATION_ID"
+    },
+    "authJwksUrl": {
+      "value": "https://TENANT.ciamlogin.com/TENANT_ID/discovery/v2.0/keys"
+    },
+    "authorizationServer": {
+      "value": "https://TENANT.ciamlogin.com/TENANT_ID/v2.0"
+    },
+    "authRequestScope": {
+      "value": "https://FUNCTION_HOST/mcp/memory.access"
+    },
+    "modelResourceName": {
+      "value": "EXISTING_AZURE_OPENAI_ACCOUNT"
+    },
+    "modelResourceGroup": {
+      "value": "EXISTING_MODEL_RESOURCE_GROUP"
+    }
+  }
+}

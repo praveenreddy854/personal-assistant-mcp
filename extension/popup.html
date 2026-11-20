@@ -1,0 +1,14 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><title>Memory capture</title><link rel="stylesheet" href="popup.css"></head>
+<body><main>
+  <div class="eyebrow">PERSONAL MEMORY</div><h1>Capture this form</h1>
+  <p>Save field changes in the tab you pair. Your agent can reuse the information after you mark the answers final.</p>
+  <form id="pair-form">
+    <label for="server">Memory server</label><input id="server" type="url" placeholder="https://memory.example.com" required>
+    <label for="code">One-time pairing code</label><input id="code" type="password" autocomplete="off" required>
+    <button id="start" type="submit">Start capture</button>
+  </form>
+  <section aria-live="polite"><strong id="status">Not capturing</strong><div id="details"></div><div id="pending"></div></section>
+  <button id="stop" class="secondary" hidden>Stop capture</button>
+  <p class="footnote">Only the paired tab and website are captured. Passwords, authentication codes, hidden fields, and file contents are outside capture coverage.</p>
+</main><script src="popup.js" type="module"></script></body></html>

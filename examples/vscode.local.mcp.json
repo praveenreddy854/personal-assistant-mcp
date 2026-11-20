@@ -1,0 +1,4 @@
+{
+  "inputs": [ { "id": "memoryDevToken", "type": "promptString", "description": "Local development token from .env", "password": true } ],
+  "servers": { "personal-memory": { "type": "http", "url": "http://localhost:3000/mcp", "headers": { "Authorization": "Bearer ${input:memoryDevToken}" } } }
+}

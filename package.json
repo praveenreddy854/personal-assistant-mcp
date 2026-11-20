@@ -1,0 +1,44 @@
+{
+  "name": "personal-memory-mcp",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "dev": "tsx watch src/server.ts",
+    "db:start": "node scripts/dev-db.mjs",
+    "db:stop": "node scripts/dev-db.mjs stop",
+    "build": "tsc -p tsconfig.json",
+    "start": "node dist/server.js",
+    "invite": "tsx src/admin.ts invite",
+    "export:deletions": "tsx src/admin.ts export-deletions",
+    "restore:deletions": "tsx src/admin.ts restore-deletions",
+    "test": "vitest run",
+    "test:deploy": "node --test tests/deploy-script.node.mjs",
+    "test:browser": "playwright test",
+    "check": "npm run build && npm test && npm run test:deploy && npm run test:browser",
+    "package:azure": "node scripts/package-azure.mjs",
+    "smoke:functions": "node scripts/smoke-functions.mjs",
+    "deploy:azure": "node scripts/deploy-azure.mjs",
+    "db:initialize": "tsx src/admin.ts initialize"
+  },
+  "dependencies": {
+    "@azure/cosmos": "^4.10.2",
+    "@azure/identity": "^4.13.0",
+    "@modelcontextprotocol/sdk": "^1.26.0",
+    "dotenv": "^17.2.3",
+    "express": "^5.2.1",
+    "jose": "^6.1.3",
+    "zod": "^4.3.6"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.58.2",
+    "@types/express": "^5.0.6",
+    "@types/node": "^22.19.0",
+    "tsx": "^4.21.0",
+    "typescript": "^5.9.3",
+    "vitest": "^4.0.18"
+  }
+}

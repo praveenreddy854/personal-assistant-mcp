@@ -1,0 +1,12 @@
+.git*
+.env*
+local.settings*
+tests/
+test-results/
+playwright-report/
+extension/
+infra/
+docs/
+src/
+artifacts/
+node_modules/.cache/
