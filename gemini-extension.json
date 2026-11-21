@@ -1,0 +1,21 @@
+{
+  "name": "personal-memory",
+  "version": "0.1.0",
+  "description": "Shared family memory over MCP",
+  "settings": [
+    {
+      "name": "Memory token",
+      "description": "Your personal family memory token",
+      "envVar": "MEMORY_TOKEN",
+      "sensitive": true
+    }
+  ],
+  "mcpServers": {
+    "personal-memory": {
+      "httpUrl": "https://your-host.example/mcp",
+      "headers": {
+        "Authorization": "Bearer ${MEMORY_TOKEN}"
+      }
+    }
+  }
+}

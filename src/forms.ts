@@ -15,7 +15,7 @@ export class FormService {
     requireThat(url.origin===pageOrigin && (url.protocol==='https:' || ['localhost','127.0.0.1'].includes(url.hostname)),
       'invalid_origin','Use an exact HTTPS page origin, or localhost for development.');
     return this.memory.db.withVault(actor,true,async tx=>{
-      const subject=subjectId??(await tx.find('entities',{where:{is_self:true},limit:1}))[0]?.id;
+      const subject=subjectId??tx.self??(await tx.find('entities',{where:{is_self:true},limit:1}))[0]?.id;
       requireThat(subject&&await tx.get('entities',subject),'not_found','The form subject is not in this vault.',404);
       const id=randomUUID(),pair=secret(tx.vault,id);
       await tx.put('form_sessions',id,{subject_id:subject,title,page_origin:pageOrigin,pair_hash:digest(pair),pair_expires:new Date(Date.now()+600000).toISOString(),capture_hash:null,capture_expires:null,status:'draft',revision:0,checkpoint_revision:null,checkpoint_at:null,snapshot_challenge:null,submission_status:'unknown'});

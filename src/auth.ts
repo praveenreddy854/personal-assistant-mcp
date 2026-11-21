@@ -4,6 +4,7 @@ import type { Request } from 'express';
 import type { Actor } from './models.js';
 import type { Config } from './config.js';
 import { MemoryError, requireThat } from './errors.js';
+import { memberActor } from './db.js';
 
 export function authenticator(config: Config,verificationKeys?:JWTVerifyGetKey): (request: Request) => Promise<Actor> {
   const keys = config.AUTH_MODE === 'oidc' && config.AUTH_JWKS_URL ? verificationKeys??createRemoteJWKSet(new URL(config.AUTH_JWKS_URL)) : null;
@@ -16,6 +17,8 @@ export function authenticator(config: Config,verificationKeys?:JWTVerifyGetKey):
       requireThat(actual.length === expected.length && timingSafeEqual(actual,expected),'unauthorized','Invalid local development token.',401);
       return { issuer:'local-development',subject:'local-user',clientId:'local-client' };
     }
+    // Personal family tokens: membership is checked against the directory on every vault access.
+    if (config.AUTH_MODE === 'token') return memberActor(token);
     try {
       const { payload } = await jwtVerify(token,keys!,{ issuer:config.AUTH_ISSUER!,audience:config.AUTH_AUDIENCE!,algorithms:['RS256'],clockTolerance:5,requiredClaims:['sub','exp','iat'] });
       requireThat(typeof payload.scp === 'string' && payload.scp.split(' ').includes(config.AUTH_SCOPE),'insufficient_scope','The token does not grant memory access.',403);

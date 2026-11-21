@@ -1,0 +1,11 @@
+{
+  "mcpServers": {
+    "personal-memory": {
+      "type": "http",
+      "url": "https://your-host.example/mcp",
+      "headers": {
+        "Authorization": "Bearer ${MEMORY_TOKEN}"
+      }
+    }
+  }
+}

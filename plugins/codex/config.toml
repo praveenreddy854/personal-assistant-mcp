@@ -1,0 +1,3 @@
+[mcp_servers.personal_memory]
+url = "https://your-host.example/mcp"
+bearer_token_env_var = "MEMORY_TOKEN"

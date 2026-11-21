@@ -1,6 +1,6 @@
 import { CosmosClient, VectorIndexType,VectorEmbeddingDataType,VectorEmbeddingDistanceFunction, type Container, type OperationInput } from '@azure/cosmos';
 import { DefaultAzureCredential } from '@azure/identity';
-import { createHash,randomUUID } from 'node:crypto';
+import { createHash,randomBytes,randomUUID } from 'node:crypto';
 import { gzipSync,gunzipSync } from 'node:zlib';
 import type { Actor } from './models.js';
 import { MemoryError,requireThat } from './errors.js';
@@ -12,6 +12,7 @@ export type Query={where?:Filters;or?:Filters[];terms?:string[];asOf?:string;rel
 type Head={id:'vault';vault_id:string;owner_key:string;revision:number;active:boolean;maintenance?:{job_id:string;next:number};_etag?:string};
 export type DatabaseOptions={endpoint:string;database?:string;container?:string;directoryContainer?:string;key?:string;batchSize?:number};
 const digest=(value:string)=>createHash('sha256').update(value).digest('hex');
+export const memberActor=(token:string):Actor=>({issuer:'family-token',subject:digest(token),clientId:`member-${digest(token).slice(0,16)}`});
 export const ownerKey=(actor:Pick<Actor,'issuer'|'subject'>)=>digest(JSON.stringify([actor.issuer,actor.subject]));
 export const fieldId=(session:string,key:string)=>digest(JSON.stringify([session,key]));
 const itemId=(kind:Kind,id:string)=>`${kind}_${id}`;
@@ -42,6 +43,8 @@ function predicate(kind:Kind,vault:string,query:Query){
 /** Scoped unit of work. Queries always carry the authenticated vault's full partition key. */
 export class Tx {
   readonly vault:string;revision:number;
+  /** Entity ID of the signed-in family member; undefined for single-owner vaults. */
+  self?:string;
   private cache=new Map<string,Row|null>();
   private existing=new Set<string>();
   readonly changes=new Map<string,OperationInput>();
@@ -164,7 +167,31 @@ export class Database {
   async withVault<T>(actor:Actor,write:boolean,run:(tx:Tx)=>Promise<T>){
     const owner=ownerKey(actor),mapping=await this.read(this.directory,owner,owner);
     requireThat(mapping,'not_invited','This identity has not been invited, or its access was revoked.',403);
+    // Family members share a vault; the directory mapping is the access grant.
+    if(mapping.self_id)return this.withVaultId(mapping.vault_id,write,tx=>{tx.self=mapping.self_id;return run(tx);});
     return this.withVaultId(mapping.vault_id,write,run,owner);
+  }
+  async addMember(name:string){
+    const token=randomBytes(32).toString('base64url'),owner=ownerKey(memberActor(token));
+    let family=await this.read(this.directory,'family','family');
+    if(!family){
+      const vault=randomUUID();
+      await this.batch(vault,[{operationType:'Create',resourceBody:{id:'vault',vault_id:vault,owner_key:'family',revision:0,active:true}}]);
+      try{await this.directory.items.create({id:'family',vault_id:vault});}
+      catch(error:any){if(error.code!==409)throw error;}
+      family=await this.read(this.directory,'family','family');
+    }
+    const self=randomUUID();
+    await this.withVaultId(family.vault_id,true,async tx=>{
+      await tx.put('entities',self,{id:self,kind:'person',name,aliases:[],is_self:false,member:true,search_tokens:tokens(name)});tx.revision++;
+    });
+    await this.directory.items.create({id:owner,vault_id:family.vault_id,self_id:self,member_name:name});
+    return token;
+  }
+  async removeMember(name:string){
+    const rows=await this.directory.items.query<{id:string}>({query:'SELECT c.id FROM c WHERE c.member_name=@name',parameters:[{name:'@name',value:name}]}).fetchAll();
+    for(const row of rows.resources)await this.directory.item(row.id,row.id).delete();
+    return rows.resources.length;
   }
   async bump(tx:Tx){tx.revision++;}
   async withSessionSecret<T>(secret:string,pair:boolean,run:(tx:Tx,session:any)=>Promise<T>){

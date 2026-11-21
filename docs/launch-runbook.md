@@ -2,6 +2,8 @@
 
 Guidance checked against vendor documentation on 2026-11-16. All environment names, IDs, domains and addresses in this document are dummy examples. Substitute real values only in an ignored local record, private runner environment or client configuration. This is a procedure, not evidence that an environment has passed it.
 
+**Family token mode:** if you deploy with `AUTH_MODE=token`, skip steps 1–4 (Google, External ID, client registrations and OAuth checks). Add members with `npm run add-member -- <name>` from the private administration runner (step 6), then connect clients as described in the README under [Connect a client](../README.md#connect-a-client). Steps 5–6 and 9–11 still apply; use a member token instead of an OAuth token when verifying.
+
 Use this after [infrastructure and code deployment](deployment.md). The sequence is: Google federation, API/client registrations, OAuth compatibility, private administration, authenticated onboarding, live verification, then normal use.
 
 ## 1. Prepare the accounts and record the identifiers

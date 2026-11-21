@@ -16,6 +16,12 @@ async function main(){
     else if(command==='invite'){
       const [issuer,subject,email]=process.argv.slice(3);if(!issuer||!subject)throw new Error('Usage: npm run invite -- <issuer> <stable-subject-or-oid> [display-email]');
       console.log(`Invited identity. Vault: ${await db.invite({issuer,subject},email)}`);
+    }else if(command==='add-member'){
+      const name=process.argv.slice(3).join(' ').trim();if(!name)throw new Error('Usage: npm run add-member -- <name>');
+      console.log(`Added ${name}. Give them this token (shown once) to use as "Authorization: Bearer <token>":\n${await db.addMember(name)}`);
+    }else if(command==='remove-member'){
+      const name=process.argv.slice(3).join(' ').trim();if(!name)throw new Error('Usage: npm run remove-member -- <name>');
+      console.log(`Revoked ${await db.removeMember(name)} token(s) for ${name}. Their memories stay in the family vault.`);
     }else if(command==='export-deletions'){
       const path=process.argv[3];if(!path)throw new Error('Provide an export path independent of database backups.');
       const identities=await db.directory.items.query<{vault_id:string}>('SELECT c.vault_id FROM c').fetchAll(),receipts=[];
@@ -27,7 +33,7 @@ async function main(){
       const receipts=z.array(ReceiptSchema).parse(JSON.parse(await readFile(path,'utf8')));
       for(const receipt of receipts)await reapplyDeletionReceipt(db,receipt);
       console.log(`Reapplied ${receipts.length} receipts. Verify the restored store before enabling serving; capture secrets were revoked.`);
-    }else throw new Error('Use initialize, invite, export-deletions or restore-deletions');
+    }else throw new Error('Use initialize, invite, add-member, remove-member, export-deletions or restore-deletions');
   }finally{await db.close();}
 }
 main().catch(error=>{console.error(error.message);process.exitCode=1;});
