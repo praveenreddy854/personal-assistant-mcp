@@ -117,3 +117,12 @@ it('restore invalidates family-vault capture secrets even without receipts',asyn
   expect(await invalidateRestoredFamilyVault(admin)).toBe(true);
   await expect(forms.pair(started.pairing_code,'https://forms.example')).rejects.toMatchObject({code:'invalid_capture_secret'});
 });
+
+it('stores only a hashed member key, not the name, on member records',async()=>{
+  const name=`Secret-${randomUUID()}`,actor=memberActor(await admin.addMember(name));
+  const grant=await admin.read(admin.directory,ownerKey(actor),ownerKey(actor));
+  expect(JSON.stringify(grant)).not.toContain(name);
+  const self=(await memory.snapshot(actor,'')).entities.find(e=>e.is_self) as any;
+  expect(self.member_key).not.toContain(name.toLowerCase());
+  expect(await admin.removeMember(name)).toBe(1);
+});

@@ -13,7 +13,8 @@ type Head={id:'vault';vault_id:string;owner_key:string;revision:number;active:bo
 export type DatabaseOptions={endpoint:string;database?:string;container?:string;directoryContainer?:string;key?:string;batchSize?:number};
 const digest=(value:string)=>createHash('sha256').update(value).digest('hex');
 export const memberActor=(token:string):Actor=>({issuer:'family-token',subject:digest(token),clientId:`member-${digest(token).slice(0,16)}`});
-const memberKey=(name:string)=>name.normalize('NFKC').trim().toLowerCase();
+// Hashed so a member's name doesn't stay readable on stored records after it is forgotten.
+const memberKey=(name:string)=>digest(`member:${name.normalize('NFKC').trim().toLowerCase()}`);
 export const ownerKey=(actor:Pick<Actor,'issuer'|'subject'>)=>digest(JSON.stringify([actor.issuer,actor.subject]));
 export const fieldId=(session:string,key:string)=>digest(JSON.stringify([session,key]));
 const itemId=(kind:Kind,id:string)=>`${kind}_${id}`;
@@ -197,7 +198,7 @@ export class Database {
       await tx.put('entities',id,{id,kind:'person',name,aliases:[],is_self:false,member:true,member_key:key,search_tokens:tokens(name)});tx.revision++;
       return id;
     });
-    await this.directory.items.create({id:owner,vault_id:family.vault_id,self_id:self,member_name:name,member_key:key});
+    await this.directory.items.create({id:owner,vault_id:family.vault_id,self_id:self,member_key:key});
     return token;
   }
   async removeMember(name:string){
