@@ -36,7 +36,9 @@ export class FormService {
       const session=await tx.get('form_sessions',id);
       requireThat(session?.status==='draft','not_found','Only an existing draft form can be paired again.',404);
       const code=secret(tx.vault,id);
-      await tx.set('form_sessions',id,{pair_hash:digest(code),pair_expires:new Date(Date.now()+600000).toISOString()});
+      // Re-pairing hands a family draft to the member doing it and invalidates the previous capture token.
+      await tx.set('form_sessions',id,{pair_hash:digest(code),pair_expires:new Date(Date.now()+600000).toISOString(),
+        ...(tx.grant?{grant:tx.grant,capture_hash:null,capture_expires:null}:{})});
       return {session_id:id,pairing_code:code,pairing_expires_in_seconds:600};
     });
   }

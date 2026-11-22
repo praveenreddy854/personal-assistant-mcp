@@ -27,11 +27,17 @@ async function main(){
       const identities=await db.directory.items.query<{vault_id:string}>('SELECT c.vault_id FROM c').fetchAll(),receipts=[];
       for(const vault of new Set(identities.resources.map(r=>r.vault_id)))receipts.push(...await db.withVaultId(vault,false,tx=>tx.find('deletion_receipts'),undefined,true));
       await writeFile(path,JSON.stringify(receipts,null,2),{mode:0o600});console.log(`Exported ${receipts.length} content-free deletion receipts to ${path}`);
+      const grants=await db.memberGrants();
+      await writeFile(`${path}.grants.json`,JSON.stringify(grants),{mode:0o600});console.log(`Exported ${grants.length} current family token grants to ${path}.grants.json`);
     }else if(command==='restore-deletions'){
       if(process.env.SERVING_ENABLED!=='false')throw new Error('Set SERVING_ENABLED=false and disable the deployed application before restore replay');
       const path=process.argv[3];if(!path)throw new Error('Provide a receipt export newer than the restored backup');
       const receipts=z.array(ReceiptSchema).parse(JSON.parse(await readFile(path,'utf8')));
       for(const receipt of receipts)await reapplyDeletionReceipt(db,receipt);
+      // Remove family members whose tokens were revoked after the restored backup was taken.
+      const grantsFile=await readFile(`${path}.grants.json`,'utf8').catch(()=>null);
+      if(grantsFile)console.log(`Removed ${await db.pruneGrants(z.array(z.string()).parse(JSON.parse(grantsFile)))} family token grants revoked after the backup.`);
+      else if((await db.memberGrants()).length)throw new Error(`Family token grants exist but ${path}.grants.json is missing; export again with export-deletions before enabling serving.`);
       console.log(`Reapplied ${receipts.length} receipts. Verify the restored store before enabling serving; capture secrets were revoked.`);
     }else throw new Error('Use initialize, invite, add-member, remove-member, export-deletions or restore-deletions');
   }finally{await db.close();}

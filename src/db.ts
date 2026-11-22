@@ -13,6 +13,7 @@ type Head={id:'vault';vault_id:string;owner_key:string;revision:number;active:bo
 export type DatabaseOptions={endpoint:string;database?:string;container?:string;directoryContainer?:string;key?:string;batchSize?:number};
 const digest=(value:string)=>createHash('sha256').update(value).digest('hex');
 export const memberActor=(token:string):Actor=>({issuer:'family-token',subject:digest(token),clientId:`member-${digest(token).slice(0,16)}`});
+const memberKey=(name:string)=>name.normalize('NFKC').trim().toLowerCase();
 export const ownerKey=(actor:Pick<Actor,'issuer'|'subject'>)=>digest(JSON.stringify([actor.issuer,actor.subject]));
 export const fieldId=(session:string,key:string)=>digest(JSON.stringify([session,key]));
 const itemId=(kind:Kind,id:string)=>`${kind}_${id}`;
@@ -184,21 +185,32 @@ export class Database {
       catch(error:any){if(error.code!==409)throw error;}
       family=await this.read(this.directory,'family','family');
     }
-    // Re-adding a member (e.g. after a lost token) reuses their person so their history stays together.
+    // A stable member key (not the editable display name) maps re-invitations to the same person,
+    // and an existing non-member person with exactly this name is promoted instead of duplicated.
+    const key=memberKey(name);
     const self=await this.withVaultId(family.vault_id,true,async tx=>{
-      const existing=(await tx.find('entities',{where:{member:true,name},limit:1}))[0];
-      if(existing)return existing.id as string;
+      const member=(await tx.find('entities',{where:{member_key:key},limit:1}))[0];
+      if(member)return member.id as string;
+      const named=(await tx.find('entities',{where:{kind:'person',name},limit:2})).filter(e=>!e.member);
+      if(named.length===1){await tx.set('entities',named[0].id,{member:true,member_key:key});tx.revision++;return named[0].id as string;}
       const id=randomUUID();
-      await tx.put('entities',id,{id,kind:'person',name,aliases:[],is_self:false,member:true,search_tokens:tokens(name)});tx.revision++;
+      await tx.put('entities',id,{id,kind:'person',name,aliases:[],is_self:false,member:true,member_key:key,search_tokens:tokens(name)});tx.revision++;
       return id;
     });
-    await this.directory.items.create({id:owner,vault_id:family.vault_id,self_id:self,member_name:name});
+    await this.directory.items.create({id:owner,vault_id:family.vault_id,self_id:self,member_name:name,member_key:key});
     return token;
   }
   async removeMember(name:string){
-    const rows=await this.directory.items.query<{id:string}>({query:'SELECT c.id FROM c WHERE c.member_name=@name',parameters:[{name:'@name',value:name}]}).fetchAll();
+    const rows=await this.directory.items.query<{id:string}>({query:'SELECT c.id FROM c WHERE c.member_key=@key OR c.member_name=@name',parameters:[{name:'@key',value:memberKey(name)},{name:'@name',value:name}]}).fetchAll();
     for(const row of rows.resources)await this.directory.item(row.id,row.id).delete();
     return rows.resources.length;
+  }
+  /** Current family token grants, exported with deletion receipts so a restore can't revive removed members. */
+  async memberGrants(){return (await this.directory.items.query<{id:string}>('SELECT c.id FROM c WHERE IS_DEFINED(c.self_id)').fetchAll()).resources.map(r=>r.id);}
+  async pruneGrants(keep:string[]){
+    const allowed=new Set(keep),removed=(await this.memberGrants()).filter(id=>!allowed.has(id));
+    for(const id of removed)await this.directory.item(id,id).delete();
+    return removed.length;
   }
   async bump(tx:Tx){tx.revision++;}
   async withSessionSecret<T>(secret:string,pair:boolean,run:(tx:Tx,session:any)=>Promise<T>){

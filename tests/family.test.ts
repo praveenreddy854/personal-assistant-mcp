@@ -1,8 +1,8 @@
 import { afterAll,beforeAll,expect,it } from 'vitest';
 import { randomUUID } from 'node:crypto';
-import { Database,memberActor } from '../src/db.js';
+import { Database,memberActor,ownerKey } from '../src/db.js';
 import { MemoryService } from '../src/memory.js';
-import { ScriptedAI,context,extraction,options,setupDatabase,cosmosEnv } from './helpers.js';
+import { ScriptedAI,context,extraction,options,setupDatabase,cosmosEnv,fixture } from './helpers.js';
 import { FormService } from '../src/forms.js';
 import { authenticator } from '../src/auth.js';
 import { loadConfig } from '../src/config.js';
@@ -62,4 +62,42 @@ it('tells the answer model who is asking',async()=>{
   await memory.recall(actor,'What is my favorite food?',1);
   const entities=(ai.answerRecords[0] as any).entities;
   expect(entities.filter((e:any)=>e.is_self).map((e:any)=>e.id)).toEqual([self]);
+});
+
+it('promotes an already-remembered person instead of duplicating them',async()=>{
+  const name=`Nila-${randomUUID()}`,asker=memberActor(await admin.addMember(`Host-${randomUUID()}`));
+  const hostSelf=(await memory.snapshot(asker,'')).entities.find(e=>e.is_self)!.id;
+  ai.extractions.push(extraction(hostSelf,[{subject_ref:'nila',predicate:'hobby',value:'chess',domain:'preferences',quote:'chess',value_quote:'chess'}],[{ref:'nila',existing_id:null,kind:'person',name,aliases:[]}]));
+  await memory.remember(asker,`${name} plays chess`,context,randomUUID());
+  const before=(await memory.snapshot(asker,name)).entities.filter(e=>e.name===name);
+  expect(before).toHaveLength(1);
+  const nila=memberActor(await admin.addMember(name));
+  expect((await memory.snapshot(nila,'')).entities.find(e=>e.is_self)!.id).toBe(before[0]!.id);
+});
+
+it('re-pairing a draft moves it to the re-pairing member and revokes the old capture token',async()=>{
+  const forms=new FormService(memory),owner=`Owner-${randomUUID()}`,a=memberActor(await admin.addMember(owner)),b=memberActor(await admin.addMember(`Helper-${randomUUID()}`));
+  const started=await forms.start(a,'Shared form','https://forms.example');
+  const paired=await forms.pair(started.pairing_code,'https://forms.example');
+  await admin.removeMember(owner);
+  const again=await forms.pairAgain(b,started.session_id);
+  await expect(forms.pair(again.pairing_code,'https://forms.example')).resolves.toMatchObject({session_id:started.session_id});
+  await expect(forms.status(paired.capture_token)).rejects.toMatchObject({code:'invalid_capture_secret'});
+});
+
+it('restore pruning removes grants revoked after the export',async()=>{
+  const keep=memberActor(await admin.addMember(`Keep-${randomUUID()}`)),drop=memberActor(await admin.addMember(`Drop-${randomUUID()}`));
+  const exported=(await admin.memberGrants()).filter(id=>id!==ownerKey(drop));
+  expect(await admin.pruneGrants(exported)).toBeGreaterThanOrEqual(1);
+  expect(await admin.hasGrant(keep)).toBe(true);
+  expect(await admin.hasGrant(drop)).toBe(false);
+});
+
+it('marks the single owner as the asker in OIDC/development vaults',async()=>{
+  const f=await fixture(admin);
+  f.ai.extractions.push(extraction(f.vault,[{predicate:'favorite_color',value:'green',domain:'preferences',quote:'green',value_quote:'green'}]));
+  await f.memory.remember(f.actor,'My favorite color is green',context,randomUUID());
+  await f.memory.recall(f.actor,'What is my favorite color?',1);
+  expect((f.ai.answerRecords[0] as any).entities.filter((e:any)=>e.is_self).map((e:any)=>e.id)).toEqual([f.vault]);
+  await f.db.close();
 });
