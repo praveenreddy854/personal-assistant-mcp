@@ -5,6 +5,9 @@ param location string = 'centralus'
 param prefix string = 'personalmemory'
 @description('Exact token issuer. May be left empty for infrastructure bootstrap; configure before publishing/enabling the server.')
 param authIssuer string = ''
+@description('oidc: OAuth sign-in with one vault per identity. token: family tokens sharing one vault.')
+@allowed(['oidc', 'token'])
+param authMode string = 'oidc'
 param authAudience string = ''
 param authJwksUrl string = ''
 param authorizationServer string = ''
@@ -156,7 +159,7 @@ resource appSettings 'Microsoft.Web/sites/config@2024-04-01' = {
     COSMOS_DATABASE: database.name
     COSMOS_CONTAINER: vaults.name
     COSMOS_DIRECTORY_CONTAINER: identities.name
-    AUTH_MODE: 'oidc'
+    AUTH_MODE: authMode
     AUTH_ISSUER: authIssuer
     AUTH_AUDIENCE: authAudience
     AUTH_JWKS_URL: authJwksUrl

@@ -25,6 +25,8 @@ The file is written with owner-only permissions. Store it separately from the da
    SERVING_ENABLED=false npm run restore:deletions -- /secure-independent-location/memory-deletions.json
    ```
 
+   `export-deletions` also writes `<export>.grants.json`, the current family token grants. Keep it next to the receipt export. Replay deletes any restored family grant that isn't listed, so members removed after the backup stay removed. If family grants exist and that file is missing, replay stops; export again before enabling serving.
+
 5. Verify affected claims, source values, draft revisions, proposal payloads and retry responses are gone. Check that unrelated vaults remain isolated.
 6. Reconnect capture sessions with new pairing codes; restore replay invalidates restored capture secrets and pending proposals.
 7. Re-enable `SERVING_ENABLED` only after the replay and checks succeed.

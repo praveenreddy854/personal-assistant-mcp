@@ -10,6 +10,18 @@ export const ReceiptSchema=z.object({
 });
 export type Receipt=z.infer<typeof ReceiptSchema>;
 
+/** After a restore, revoke restored family-vault secrets even when no receipt touched that vault. */
+export async function invalidateRestoredFamilyVault(db:Database) {
+  const family=await db.read(db.directory,'family','family');if(!family)return false;
+  const memory=new MemoryService(db,{} as MemoryAI,'restore-does-not-call-models');
+  await db.withVaultId(family.vault_id,true,async tx=>{
+    await memory.invalidateCopies(tx);
+    for(const session of await tx.find('form_sessions'))await tx.set('form_sessions',session.id,{pair_hash:null,capture_hash:null,checkpoint_revision:null,snapshot_challenge:null});
+    await db.bump(tx);
+  },undefined,true);
+  return true;
+}
+
 /** Administrative replay: disable serving until every receipt has been reapplied. */
 export async function reapplyDeletionReceipt(db:Database,receipt:Receipt) {
   if(!await db.read(db.container,'vault',receipt.vault_id))return;

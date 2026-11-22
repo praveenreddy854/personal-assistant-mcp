@@ -13,6 +13,8 @@
     "build": "tsc -p tsconfig.json",
     "start": "node dist/server.js",
     "invite": "tsx src/admin.ts invite",
+    "add-member": "tsx src/admin.ts add-member",
+    "remove-member": "tsx src/admin.ts remove-member",
     "export:deletions": "tsx src/admin.ts export-deletions",
     "restore:deletions": "tsx src/admin.ts restore-deletions",
     "test": "vitest run",
@@ -20,6 +22,7 @@
     "test:browser": "playwright test",
     "check": "npm run build && npm test && npm run test:deploy && npm run test:browser",
     "package:azure": "node scripts/package-azure.mjs",
+    "package:plugins": "node scripts/package-plugins.mjs",
     "smoke:functions": "node scripts/smoke-functions.mjs",
     "deploy:azure": "node scripts/deploy-azure.mjs",
     "db:initialize": "tsx src/admin.ts initialize"

@@ -12,7 +12,7 @@ The domain is a graph of entities and evidence-backed claims. Family, health, ed
 - **Forms:** persist draft field revisions immediately. When you say the answers are final, obtain a fresh browser snapshot and promote supported facts. Changes to existing facts still require approval. Finalization never submits a form.
 - **Forget:** remove selected claim lineages, including corrected versions and their known source representations. Purge linked form revisions and prevent queued events or old MCP retries from restoring them. `discard_form` also removes an entire draft/final form and facts that have no other evidence.
 
-Chat approval deliberately trusts the authorized agent to report your actual instruction. It does not provide independent proof of a human action. Each Google identity owns a separate vault; being someone’s relative provides no access.
+Chat approval deliberately trusts the authorized agent to report your actual instruction. It does not provide independent proof of a human action. With OIDC sign-in (`AUTH_MODE=oidc`), each identity owns a separate vault and being someone’s relative provides no access. With family tokens (`AUTH_MODE=token`), every member shares one vault and can read, write, correct and forget everything in it; see [Family sharing](#family-sharing).
 
 ## Run locally
 
@@ -35,6 +35,39 @@ npm run dev
 The local Cosmos emulator listens only on `127.0.0.1:8081` (explorer: `http://127.0.0.1:1234`). `db:start` also works without Docker Compose; `docker compose up -d` is an alternative. Stop the named development container with `npm run db:stop`. The synthetic emulator key is local only. Azure disables account-key authentication and uses managed identity. The emulator does not enforce production RBAC.
 
 Copy `examples/vscode.local.mcp.json` into your editor-managed VS Code MCP configuration and enter your development token when prompted. The matching remote editor example is `examples/vscode.remote.mcp.json`; current native Copilot sessions use the different format in the [launch runbook](docs/launch-runbook.md#github-copilot-in-vs-code). Browser-based remote connectors require the deployed HTTPS endpoint, not your laptop’s localhost URL.
+
+## Family sharing
+
+Set `AUTH_MODE=token` to let family members sign in with personal tokens instead of OAuth. Everyone shares one family vault, and “I/me/my” always means the member who is signed in, so “my birthday is May 3” is saved on that person.
+
+```sh
+npm run add-member -- Ravi       # prints Ravi's token once; send it to him privately
+npm run remove-member -- Ravi    # revokes the token on the next request; his memories stay
+```
+
+- **Storage:** only a SHA-256 hash of each token is stored, in the `identities` container. A lost token can’t be recovered; remove and re-add the member (same name) to issue a new one. They keep their existing memories.
+- **Checking:** every vault access looks up the token hash in Cosmos, so revocation is immediate. A wrong or revoked token gets 401, and removing a member also stops their unfinished form captures.
+- **Approvals:** any member can change or forget anything, but only the member who proposed a change can approve it.
+- **Limits:** tokens don’t expire. Browser-based connectors (Claude.ai, ChatGPT) usually require OAuth and may not accept a pasted token; CLI and editor clients work.
+
+## Connect a client
+
+Generate the client packages once with your deployed URL, then commit them:
+
+```sh
+MEMORY_URL=https://<your-host>/mcp npm run package:plugins
+```
+
+Each member then sets their token in their shell profile (`export MEMORY_TOKEN=<token>`) and installs for their tool. Tokens are never written into these files.
+
+| Tool | Install |
+|---|---|
+| Claude Code | `claude plugin marketplace add <owner>/<repo>`, then `claude plugin install personal-memory@personal-memory-marketplace` |
+| Codex | `sh plugins/codex/install.sh` (or copy `plugins/codex/config.toml` into `~/.codex/config.toml`) |
+| GitHub Copilot CLI | `copilot plugin install <owner>/<repo>:plugins/copilot` |
+| Gemini CLI | `gemini extensions install https://github.com/<owner>/<repo>` (prompts for the token and keeps it in the system keychain) |
+
+Claude Code and Codex are tested. The Copilot and Gemini packages follow vendor docs but haven’t been tested; in particular, Gemini’s docs don’t confirm `${MEMORY_TOKEN}` expansion in headers. If `MEMORY_TOKEN` is unset, the client sends the literal placeholder and the server refuses the first memory tool call.
 
 ## Use from an agent
 

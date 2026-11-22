@@ -15,10 +15,10 @@ export class FormService {
     requireThat(url.origin===pageOrigin && (url.protocol==='https:' || ['localhost','127.0.0.1'].includes(url.hostname)),
       'invalid_origin','Use an exact HTTPS page origin, or localhost for development.');
     return this.memory.db.withVault(actor,true,async tx=>{
-      const subject=subjectId??(await tx.find('entities',{where:{is_self:true},limit:1}))[0]?.id;
+      const subject=subjectId??tx.self??(await tx.find('entities',{where:{is_self:true},limit:1}))[0]?.id;
       requireThat(subject&&await tx.get('entities',subject),'not_found','The form subject is not in this vault.',404);
       const id=randomUUID(),pair=secret(tx.vault,id);
-      await tx.put('form_sessions',id,{subject_id:subject,title,page_origin:pageOrigin,pair_hash:digest(pair),pair_expires:new Date(Date.now()+600000).toISOString(),capture_hash:null,capture_expires:null,status:'draft',revision:0,checkpoint_revision:null,checkpoint_at:null,snapshot_challenge:null,submission_status:'unknown'});
+      await tx.put('form_sessions',id,{subject_id:subject,grant:tx.grant??null,title,page_origin:pageOrigin,pair_hash:digest(pair),pair_expires:new Date(Date.now()+600000).toISOString(),capture_hash:null,capture_expires:null,status:'draft',revision:0,checkpoint_revision:null,checkpoint_at:null,snapshot_challenge:null,submission_status:'unknown'});
       return {session_id:id,pairing_code:pair,pairing_expires_in_seconds:600,
         instruction:'Open the capture extension on this form tab, enter the server URL and this one-time pairing code, and start capture. Only this origin and tab are captured. Finalize when the user says the answers are final.'};
     });
@@ -36,7 +36,12 @@ export class FormService {
       const session=await tx.get('form_sessions',id);
       requireThat(session?.status==='draft','not_found','Only an existing draft form can be paired again.',404);
       const code=secret(tx.vault,id);
-      await tx.set('form_sessions',id,{pair_hash:digest(code),pair_expires:new Date(Date.now()+600000).toISOString()});
+      // Re-pairing hands a family draft to the member doing it and invalidates the previous capture token.
+      await tx.set('form_sessions',id,{pair_hash:digest(code),pair_expires:new Date(Date.now()+600000).toISOString(),
+        // Drop the old extension's snapshot state so finalize needs a fresh snapshot from the new one.
+        ...(tx.grant?{grant:tx.grant,capture_hash:null,capture_expires:null,checkpoint_revision:null,checkpoint_at:null,snapshot_challenge:null}:{})});
+      // Bump the vault revision so any proposal prepared before the handoff is stale and can't be approved.
+      if(tx.grant)await this.memory.db.bump(tx);
       return {session_id:id,pairing_code:code,pairing_expires_in_seconds:600};
     });
   }

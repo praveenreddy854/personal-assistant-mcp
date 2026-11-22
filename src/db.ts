@@ -1,6 +1,6 @@
 import { CosmosClient, VectorIndexType,VectorEmbeddingDataType,VectorEmbeddingDistanceFunction, type Container, type OperationInput } from '@azure/cosmos';
 import { DefaultAzureCredential } from '@azure/identity';
-import { createHash,randomUUID } from 'node:crypto';
+import { createHash,randomBytes,randomUUID } from 'node:crypto';
 import { gzipSync,gunzipSync } from 'node:zlib';
 import type { Actor } from './models.js';
 import { MemoryError,requireThat } from './errors.js';
@@ -12,6 +12,9 @@ export type Query={where?:Filters;or?:Filters[];terms?:string[];asOf?:string;rel
 type Head={id:'vault';vault_id:string;owner_key:string;revision:number;active:boolean;maintenance?:{job_id:string;next:number};_etag?:string};
 export type DatabaseOptions={endpoint:string;database?:string;container?:string;directoryContainer?:string;key?:string;batchSize?:number};
 const digest=(value:string)=>createHash('sha256').update(value).digest('hex');
+export const memberActor=(token:string):Actor=>({issuer:'family-token',subject:digest(token),clientId:`member-${digest(token).slice(0,16)}`});
+// Hashed so a member's name doesn't stay readable on stored records after it is forgotten.
+const memberKey=(name:string)=>digest(`member:${name.normalize('NFKC').trim().toLowerCase()}`);
 export const ownerKey=(actor:Pick<Actor,'issuer'|'subject'>)=>digest(JSON.stringify([actor.issuer,actor.subject]));
 export const fieldId=(session:string,key:string)=>digest(JSON.stringify([session,key]));
 const itemId=(kind:Kind,id:string)=>`${kind}_${id}`;
@@ -42,6 +45,10 @@ function predicate(kind:Kind,vault:string,query:Query){
 /** Scoped unit of work. Queries always carry the authenticated vault's full partition key. */
 export class Tx {
   readonly vault:string;revision:number;
+  /** Entity ID of the signed-in family member; undefined for single-owner vaults. */
+  self?:string;
+  /** Directory grant of the signed-in family member, used to revoke capture credentials. */
+  grant?:string;
   private cache=new Map<string,Row|null>();
   private existing=new Set<string>();
   readonly changes=new Map<string,OperationInput>();
@@ -164,7 +171,47 @@ export class Database {
   async withVault<T>(actor:Actor,write:boolean,run:(tx:Tx)=>Promise<T>){
     const owner=ownerKey(actor),mapping=await this.read(this.directory,owner,owner);
     requireThat(mapping,'not_invited','This identity has not been invited, or its access was revoked.',403);
+    // Family members share a vault; the directory mapping is the access grant.
+    if(mapping.self_id)return this.withVaultId(mapping.vault_id,write,tx=>{tx.self=mapping.self_id;tx.grant=owner;return run(tx);});
     return this.withVaultId(mapping.vault_id,write,run,owner);
+  }
+  async hasGrant(actor:Actor){const owner=ownerKey(actor);return Boolean(await this.read(this.directory,owner,owner));}
+  async addMember(name:string){
+    const token=randomBytes(32).toString('base64url'),owner=ownerKey(memberActor(token));
+    let family=await this.read(this.directory,'family','family');
+    if(!family){
+      const vault=randomUUID();
+      await this.batch(vault,[{operationType:'Create',resourceBody:{id:'vault',vault_id:vault,owner_key:'family',revision:0,active:true}}]);
+      try{await this.directory.items.create({id:'family',vault_id:vault});}
+      catch(error:any){if(error.code!==409)throw error;}
+      family=await this.read(this.directory,'family','family');
+    }
+    // A stable member key (not the editable display name) maps re-invitations to the same person,
+    // and an existing non-member person with exactly this name is promoted instead of duplicated.
+    const key=memberKey(name);
+    const self=await this.withVaultId(family.vault_id,true,async tx=>{
+      const member=(await tx.find('entities',{where:{member_key:key},limit:1}))[0];
+      if(member)return member.id as string;
+      const named=(await tx.find('entities',{where:{kind:'person',name},limit:2})).filter(e=>!e.member);
+      if(named.length===1){await tx.set('entities',named[0].id,{member:true,member_key:key});tx.revision++;return named[0].id as string;}
+      const id=randomUUID();
+      await tx.put('entities',id,{id,kind:'person',name,aliases:[],is_self:false,member:true,member_key:key,search_tokens:tokens(name)});tx.revision++;
+      return id;
+    });
+    await this.directory.items.create({id:owner,vault_id:family.vault_id,self_id:self,member_key:key});
+    return token;
+  }
+  async removeMember(name:string){
+    const rows=await this.directory.items.query<{id:string}>({query:'SELECT c.id FROM c WHERE c.member_key=@key OR c.member_name=@name',parameters:[{name:'@key',value:memberKey(name)},{name:'@name',value:name}]}).fetchAll();
+    for(const row of rows.resources)await this.directory.item(row.id,row.id).delete();
+    return rows.resources.length;
+  }
+  /** Current family token grants, exported with deletion receipts so a restore can't revive removed members. */
+  async memberGrants(){return (await this.directory.items.query<{id:string}>('SELECT c.id FROM c WHERE IS_DEFINED(c.self_id)').fetchAll()).resources.map(r=>r.id);}
+  async pruneGrants(keep:string[]){
+    const allowed=new Set(keep),removed=(await this.memberGrants()).filter(id=>!allowed.has(id));
+    for(const id of removed)await this.directory.item(id,id).delete();
+    return removed.length;
   }
   async bump(tx:Tx){tx.revision++;}
   async withSessionSecret<T>(secret:string,pair:boolean,run:(tx:Tx,session:any)=>Promise<T>){
@@ -173,6 +220,10 @@ export class Database {
     return this.withVaultId(vault!,true,async tx=>{
       const session=await tx.get('form_sessions',id!),hash=pair?'pair_hash':'capture_hash',expires=pair?'pair_expires':'capture_expires';
       requireThat(session&&session.status==='draft'&&session[hash]===digest(secret)&&Date.parse(session[expires])>Date.now(),'invalid_capture_secret','The pairing code or capture token is invalid, expired, or revoked.',401);
+      // Family forms stop accepting capture once the member who started them is removed.
+      // In the family vault every session must belong to a current member; sessions without a grant are refused.
+      const family=session.grant?undefined:await this.read(this.directory,'family','family');
+      requireThat(session.grant?await this.read(this.directory,session.grant,session.grant):family?.vault_id!==vault,'invalid_capture_secret','The pairing code or capture token is invalid, expired, or revoked.',401);
       return run(tx,session);
     });
   }

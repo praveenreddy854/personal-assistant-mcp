@@ -14,6 +14,8 @@ const claimRow=(row:any):Claim=>({id:row.id,subject_id:row.subject_id,predicate:
   valid_from:date(row.valid_from),valid_to:date(row.valid_to),modality:row.modality,qualifiers:row.qualifiers,status:row.status,lineage_id:row.lineage_id,version:row.version,
   search_text:row.search_text,recorded_at:row.recorded_at,superseded_at:row.superseded_at??null});
 const unique=<T>(values:T[])=>[...new Set(values)];
+/** In a family vault, "I/me" is the signed-in member. */
+const markSelf=(tx:Tx,entities:any[])=>tx.self?entities.map(e=>({...e,is_self:e.id===tx.self})):entities;
 
 export class MemoryService {
   constructor(public db:Database,public ai:MemoryAI,public embeddingVersion:string){}
@@ -23,8 +25,11 @@ export class MemoryService {
       const recent=await tx.find('claims',{where,orderBy:'recorded_at',descending:true,limit:501});
       const matching=terms.length?await tx.find('claims',{where,terms,limit:501}):[];
       const claims=[...new Map([...matching,...recent].map(c=>[c.id,c])).values()];
-      const entities=await tx.find('entities',{orderBy:'is_self',descending:true,limit:1001});
-      return {revision:tx.revision,claims:claims.slice(0,500).map(claimRow),entities:entities.slice(0,1000),truncated:claims.length>500||entities.length>1000};
+      const listed=await tx.find('entities',{orderBy:'is_self',descending:true,limit:1001});
+      // Keep the signed-in member first so a large vault can't push "me" out of the bounded snapshot.
+      const own=tx.self?await tx.get('entities',tx.self):undefined;
+      const entities=own?[own,...listed.filter(e=>e.id!==own.id)]:listed;
+      return {revision:tx.revision,claims:claims.slice(0,500).map(claimRow),entities:markSelf(tx,entities.slice(0,1000)),truncated:claims.length>500||entities.length>1000};
     });
   }
   private async reserve(actor:Actor,key:string,digest:string){
@@ -42,7 +47,8 @@ export class MemoryService {
   async remember(actor:Actor,text:string,context:Context,key:string){return this.ingest(actor,{text,context,kind:'statement'},key);}
   async ingest(actor:Actor,source:SourceInput,key:string){
     requireThat(source.text.trim()&&source.text.length<=100000,'invalid_source','Provide 1–100000 characters of source information.');
-    const digest=hash(source),cached=await this.reserve(actor,key,digest);if(cached)return cached;
+    // In the shared family vault, bind the request UUID to the member so another member can't replay it.
+    const digest=hash(actor.issuer==='family-token'?{source,member:actor.subject}:source),cached=await this.reserve(actor,key,digest);if(cached)return cached;
     try{
       let snapshot=await this.snapshot(actor,source.text);
       const extraction=ExtractionSchema.parse(await this.ai.extract(source.text,source.context,snapshot));
@@ -56,7 +62,7 @@ export class MemoryService {
         const existing=ids.length?await tx.find('claims',{where:{subject_id:ids,predicate:predicates,status:['active','historical']},limit:1001}):[];
         requireThat(existing.length<=1000,'review_scope_too_large','This change affects too many facts; narrow the scope.');
         const entities=ids.length?await tx.find('entities',{where:{id:ids}}):[];
-        return {...snapshot,entities:[...new Map([...snapshot.entities,...entities].map(e=>[e.id,e])).values()],claims:[...new Map([...snapshot.claims,...existing.map(claimRow)].map(c=>[c.id,c])).values()]};
+        return {...snapshot,entities:markSelf(tx,[...new Map([...snapshot.entities,...entities].map(e=>[e.id,e])).values()]),claims:[...new Map([...snapshot.claims,...existing.map(claimRow)].map(c=>[c.id,c])).values()]};
       });
       const plan=await this.plan(source,snapshot,extraction);
       return await this.db.withVault(actor,true,async tx=>{
@@ -240,7 +246,7 @@ export class MemoryService {
   }
   private async cleanupEntities(tx:Tx,ids:string[]){
     for(const id of unique(ids.filter(Boolean))){
-      const entity=await tx.get('entities',id);if(!entity||entity.is_self)continue;
+      const entity=await tx.get('entities',id);if(!entity||entity.is_self||entity.member)continue;
       const claims=await tx.find('claims',{or:[{subject_id:id},{object_id:id}],limit:1});
       const forms=await tx.find('form_sessions',{where:{subject_id:id},limit:1});
       if(!claims.length&&!forms.length)await tx.remove('entities',id);
@@ -333,7 +339,7 @@ export class MemoryService {
       const semantic=await tx.semantic(embedding,this.embeddingVersion,filter,60),scores=new Map<string,{claim:any;score:number}>();
       for(const list of [keyword.slice(0,60),semantic])for(const [index,claim] of list.entries()){const row=scores.get(claim.id)??{claim,score:0};row.score+=1/(61+index);scores.set(claim.id,row);}
       const seeds=[...scores.values()].sort((a,b)=>b.score-a.score).slice(0,80).map(row=>row.claim);
-      const self=await tx.find('entities',{where:{is_self:true}}),named=words.length?await tx.find('entities',{terms:words,limit:100}):[];
+      const self=tx.self?[{id:tx.self}]:await tx.find('entities',{where:{is_self:true}}),named=words.length?await tx.find('entities',{terms:words,limit:100}):[];
       const mentioned=named.filter(e=>[e.name,...e.aliases].some((label:string)=>label.length>2&&question.toLowerCase().includes(label.toLowerCase())));
       const nodes=new Set<string>([...self,...mentioned].map(e=>e.id));for(const c of seeds){nodes.add(c.subject_id);if(c.object_id)nodes.add(c.object_id);}
       let frontier=[...nodes],truncated=false;
@@ -348,8 +354,9 @@ export class MemoryService {
       const combined=[...new Map([...seeds,...neighbors.slice(0,200)].map(c=>[c.id,claimRow(c)])).values()];
       if(!combined.length)return {claims:[],evidence:[],entities:[],truncated:false,revision:tx.revision};
       const evidence=await this.hydrateEvidence(tx,await tx.find('claim_evidence',{where:{claim_id:combined.map(c=>c.id)}}));
-      const entities=await tx.find('entities',{where:{id:unique(combined.flatMap(c=>[c.subject_id,c.object_id]).filter(Boolean))}});
-      return {claims:combined,evidence:evidence.map(e=>({claim_id:e.claim_id,source_id:e.source_id,quote:e.quote,relation:e.relation,kind:e.kind,recorded_at:e.recorded_at,redacted:e.redacted})) as Evidence[],entities:entities.map(e=>({id:e.id,kind:e.kind,name:e.name})),truncated,revision:tx.revision};
+      // Always include the asker (family member or single owner) so "I/me/my" resolves in every auth mode.
+      const entities=await tx.find('entities',{where:{id:unique([...combined.flatMap(c=>[c.subject_id,c.object_id]),...self.map(e=>e.id)].filter(Boolean))}});
+      return {claims:combined,evidence:evidence.map(e=>({claim_id:e.claim_id,source_id:e.source_id,quote:e.quote,relation:e.relation,kind:e.kind,recorded_at:e.recorded_at,redacted:e.redacted})) as Evidence[],entities:markSelf(tx,entities).map(e=>({id:e.id,kind:e.kind,name:e.name,is_self:Boolean(e.is_self)})),truncated,revision:tx.revision};
     });
     if(!records.claims.length)return {answer:'I do not have remembered information supporting an answer.',claims:[],evidence:[],missing_information:[question],conflicts:[],level,truncated:false};
     const answer=await this.ai.answer(question,level,[records]);

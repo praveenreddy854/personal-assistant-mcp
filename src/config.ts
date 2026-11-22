@@ -7,7 +7,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env) {
     PORT: z.coerce.number().int().positive().default(3000),
     PUBLIC_URL: z.url(), COSMOS_ENDPOINT:z.url(), COSMOS_DATABASE:z.string().default('memory'),
     COSMOS_CONTAINER:z.string().default('vaults'), COSMOS_DIRECTORY_CONTAINER:z.string().default('identities'), COSMOS_KEY:z.string().optional(),
-    AUTH_MODE: z.enum(['oidc', 'development']).default('oidc'),
+    AUTH_MODE: z.enum(['oidc', 'development', 'token']).default('oidc'),
     DEV_TOKEN: z.string().optional(), AUTH_ISSUER: z.string().optional(),
     AUTH_AUDIENCE: z.string().optional(), AUTH_JWKS_URL: z.string().optional(),
     AUTHORIZATION_SERVER: z.string().optional(), AUTH_SCOPE: z.string().default('memory.access'),
@@ -27,7 +27,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env) {
   if (c.AUTH_MODE === 'development') {
     if (c.NODE_ENV === 'production' || !local || !c.DEV_TOKEN || c.DEV_TOKEN.length < 32)
       throw new Error('Development authentication requires a local URL, non-production mode, and a 32+ character DEV_TOKEN');
-  } else {
+  } else if (c.AUTH_MODE === 'oidc') {
     for (const key of ['AUTH_ISSUER', 'AUTH_AUDIENCE', 'AUTH_JWKS_URL', 'AUTHORIZATION_SERVER'] as const)
       if (!c[key] && c.SERVING_ENABLED!=='false') throw new Error(`${key} is required for OIDC authentication`);
     for (const key of ['AUTH_ISSUER', 'AUTH_JWKS_URL', 'AUTHORIZATION_SERVER'] as const)

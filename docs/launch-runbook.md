@@ -2,6 +2,8 @@
 
 Guidance checked against vendor documentation on 2026-11-16. All environment names, IDs, domains and addresses in this document are dummy examples. Substitute real values only in an ignored local record, private runner environment or client configuration. This is a procedure, not evidence that an environment has passed it.
 
+**Family token mode:** if you deploy with `AUTH_MODE=token`, skip steps 1–4 (Google, External ID, client registrations and OAuth checks). In step 5, set `AUTH_MODE=token` instead of `oidc` and omit the `AUTH_*`/`AUTHORIZATION_SERVER` settings. Complete step 6, then add members with `npm run add-member -- <name>` from that private administration runner. Run step 7's `SERVING_ENABLED=true` command (skip its OAuth/invite checks; an unknown token must get HTTP 401). Then connect clients as described in the README under [Connect a client](../README.md#connect-a-client). Steps 9–11 still apply; use a member token instead of an OAuth token when verifying. Set the `authMode` parameter to `token` in the local deployment parameter file too (`"authMode": { "value": "token" }`), because a full redeployment rewrites app settings from Bicep and sets serving back to false; re-run the step 7 enable command after any redeployment.
+
 Use this after [infrastructure and code deployment](deployment.md). The sequence is: Google federation, API/client registrations, OAuth compatibility, private administration, authenticated onboarding, live verification, then normal use.
 
 ## 1. Prepare the accounts and record the identifiers

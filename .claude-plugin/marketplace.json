@@ -1,0 +1,13 @@
+{
+  "name": "personal-memory-marketplace",
+  "owner": {
+    "name": "Personal Memory"
+  },
+  "plugins": [
+    {
+      "name": "personal-memory",
+      "source": "./plugins/claude-code",
+      "description": "Shared family memory over MCP"
+    }
+  ]
+}
