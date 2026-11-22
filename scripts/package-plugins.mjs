@@ -8,6 +8,8 @@ import { dirname } from 'node:path';
 let parsed;
 try { parsed = new URL(process.env.MEMORY_URL ?? ''); } catch { throw new Error('Set MEMORY_URL to the full server URL ending in /mcp'); }
 if (parsed.username || parsed.password || parsed.search || parsed.hash || parsed.pathname !== '/mcp') throw new Error('MEMORY_URL must be a plain https://<host>/mcp URL');
+// Only plain DNS names/IPv4 and a numeric port, so the URL is safe inside the generated shell script and TOML.
+if (!/^[a-z0-9.-]+$/.test(parsed.hostname) || !/^\d*$/.test(parsed.port)) throw new Error('MEMORY_URL host must be a plain DNS name or IPv4 address');
 const local = ['localhost', '127.0.0.1'].includes(parsed.hostname);
 if (parsed.protocol !== 'https:' && !(parsed.protocol === 'http:' && local)) throw new Error('MEMORY_URL must use HTTPS outside localhost');
 const url = parsed.href;
@@ -36,7 +38,7 @@ for (const [path, body] of Object.entries(files)) {
 }
 // Codex: plain config, since the Codex plugin manifest format is not documented.
 await mkdir('plugins/codex', { recursive: true });
-await writeFile('plugins/codex/config.toml', `[mcp_servers.personal_memory]\nurl = "${url}"\nbearer_token_env_var = "MEMORY_TOKEN"\n`);
-await writeFile('plugins/codex/install.sh', `#!/bin/sh\nset -e\ncodex mcp add personal_memory --url "${url}" --bearer-token-env-var MEMORY_TOKEN\n`);
+await writeFile('plugins/codex/config.toml', `[mcp_servers.personal_memory]\nurl = ${JSON.stringify(url)}\nbearer_token_env_var = "MEMORY_TOKEN"\n`);
+await writeFile('plugins/codex/install.sh', `#!/bin/sh\nset -e\ncodex mcp add personal_memory --url '${url}' --bearer-token-env-var MEMORY_TOKEN\n`);
 await chmod('plugins/codex/install.sh', 0o755);
 console.log(`Wrote Claude Code, Copilot, Codex and Gemini packaging for ${url}`);
