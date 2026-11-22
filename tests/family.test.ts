@@ -133,3 +133,11 @@ it('refuses family-vault form sessions that have no member grant',async()=>{
   await db.withVault(actor,true,tx=>tx.set('form_sessions',started.session_id,{grant:null}));
   await expect(forms.pair(started.pairing_code,'https://forms.example')).rejects.toMatchObject({code:'invalid_capture_secret'});
 });
+
+it('re-pairing a draft makes proposals prepared before the handoff stale',async()=>{
+  const forms=new FormService(memory),a=memberActor(await admin.addMember(`PropA-${randomUUID()}`)),b=memberActor(await admin.addMember(`PropB-${randomUUID()}`));
+  const started=await forms.start(a,'Handoff form','https://forms.example');
+  const proposal=await memory.proposeDiscardForm(a,started.session_id,'test') as any;
+  await forms.pairAgain(b,started.session_id);
+  await expect(memory.decide(a,proposal.proposal_id,'approve','yes discard it')).rejects.toMatchObject({code:'stale_proposal'});
+});
