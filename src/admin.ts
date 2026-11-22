@@ -2,7 +2,7 @@ import 'dotenv/config';
 import { readFile,writeFile } from 'node:fs/promises';
 import { z } from 'zod';
 import { Database } from './db.js';
-import { ReceiptSchema,reapplyDeletionReceipt } from './restore.js';
+import { ReceiptSchema,reapplyDeletionReceipt,invalidateRestoredFamilyVault } from './restore.js';
 
 async function main(){
   const endpoint=process.env.COSMOS_ENDPOINT;if(!endpoint)throw new Error('COSMOS_ENDPOINT is required');
@@ -38,6 +38,7 @@ async function main(){
       const grantsFile=await readFile(`${path}.grants.json`,'utf8').catch(()=>null);
       if(grantsFile)console.log(`Removed ${await db.pruneGrants(z.array(z.string()).parse(JSON.parse(grantsFile)))} family token grants revoked after the backup.`);
       else if((await db.memberGrants()).length)throw new Error(`Family token grants exist but ${path}.grants.json is missing; export again with export-deletions before enabling serving.`);
+      if(await invalidateRestoredFamilyVault(db))console.log('Revoked restored family-vault capture secrets, pending proposals and cached results.');
       console.log(`Reapplied ${receipts.length} receipts. Verify the restored store before enabling serving; capture secrets were revoked.`);
     }else throw new Error('Use initialize, invite, add-member, remove-member, export-deletions or restore-deletions');
   }finally{await db.close();}

@@ -4,6 +4,7 @@ import { Database,memberActor,ownerKey } from '../src/db.js';
 import { MemoryService } from '../src/memory.js';
 import { ScriptedAI,context,extraction,options,setupDatabase,cosmosEnv,fixture } from './helpers.js';
 import { FormService } from '../src/forms.js';
+import { invalidateRestoredFamilyVault } from '../src/restore.js';
 import { authenticator } from '../src/auth.js';
 import { loadConfig } from '../src/config.js';
 
@@ -100,4 +101,19 @@ it('marks the single owner as the asker in OIDC/development vaults',async()=>{
   await f.memory.recall(f.actor,'What is my favorite color?',1);
   expect((f.ai.answerRecords[0] as any).entities.filter((e:any)=>e.is_self).map((e:any)=>e.id)).toEqual([f.vault]);
   await f.db.close();
+});
+
+it('does not replay another member\'s result for a reused request UUID',async()=>{
+  const a=memberActor(await admin.addMember(`UuidA-${randomUUID()}`)),b=memberActor(await admin.addMember(`UuidB-${randomUUID()}`));
+  const aSelf=(await memory.snapshot(a,'')).entities.find(e=>e.is_self)!.id,key=randomUUID();
+  ai.extractions.push(extraction(aSelf,[{predicate:'favorite_drink',value:'tea',domain:'preferences',quote:'tea',value_quote:'tea'}]));
+  await memory.remember(a,'My favorite drink is tea',context,key);
+  await expect(memory.remember(b,'My favorite drink is tea',context,key)).rejects.toMatchObject({code:'idempotency_conflict'});
+});
+
+it('restore invalidates family-vault capture secrets even without receipts',async()=>{
+  const forms=new FormService(memory),actor=memberActor(await admin.addMember(`Restore-${randomUUID()}`));
+  const started=await forms.start(actor,'Restored form','https://forms.example');
+  expect(await invalidateRestoredFamilyVault(admin)).toBe(true);
+  await expect(forms.pair(started.pairing_code,'https://forms.example')).rejects.toMatchObject({code:'invalid_capture_secret'});
 });

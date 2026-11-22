@@ -47,7 +47,8 @@ export class MemoryService {
   async remember(actor:Actor,text:string,context:Context,key:string){return this.ingest(actor,{text,context,kind:'statement'},key);}
   async ingest(actor:Actor,source:SourceInput,key:string){
     requireThat(source.text.trim()&&source.text.length<=100000,'invalid_source','Provide 1–100000 characters of source information.');
-    const digest=hash(source),cached=await this.reserve(actor,key,digest);if(cached)return cached;
+    // In the shared family vault, bind the request UUID to the member so another member can't replay it.
+    const digest=hash(actor.issuer==='family-token'?{source,member:actor.subject}:source),cached=await this.reserve(actor,key,digest);if(cached)return cached;
     try{
       let snapshot=await this.snapshot(actor,source.text);
       const extraction=ExtractionSchema.parse(await this.ai.extract(source.text,source.context,snapshot));
