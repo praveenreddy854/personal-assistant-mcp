@@ -221,7 +221,9 @@ export class Database {
       const session=await tx.get('form_sessions',id!),hash=pair?'pair_hash':'capture_hash',expires=pair?'pair_expires':'capture_expires';
       requireThat(session&&session.status==='draft'&&session[hash]===digest(secret)&&Date.parse(session[expires])>Date.now(),'invalid_capture_secret','The pairing code or capture token is invalid, expired, or revoked.',401);
       // Family forms stop accepting capture once the member who started them is removed.
-      requireThat(!session.grant||await this.read(this.directory,session.grant,session.grant),'invalid_capture_secret','The pairing code or capture token is invalid, expired, or revoked.',401);
+      // In the family vault every session must belong to a current member; sessions without a grant are refused.
+      const family=session.grant?undefined:await this.read(this.directory,'family','family');
+      requireThat(session.grant?await this.read(this.directory,session.grant,session.grant):family?.vault_id!==vault,'invalid_capture_secret','The pairing code or capture token is invalid, expired, or revoked.',401);
       return run(tx,session);
     });
   }

@@ -38,7 +38,8 @@ export class FormService {
       const code=secret(tx.vault,id);
       // Re-pairing hands a family draft to the member doing it and invalidates the previous capture token.
       await tx.set('form_sessions',id,{pair_hash:digest(code),pair_expires:new Date(Date.now()+600000).toISOString(),
-        ...(tx.grant?{grant:tx.grant,capture_hash:null,capture_expires:null}:{})});
+        // Drop the old extension's snapshot state so finalize needs a fresh snapshot from the new one.
+        ...(tx.grant?{grant:tx.grant,capture_hash:null,capture_expires:null,checkpoint_revision:null,checkpoint_at:null,snapshot_challenge:null}:{})});
       return {session_id:id,pairing_code:code,pairing_expires_in_seconds:600};
     });
   }

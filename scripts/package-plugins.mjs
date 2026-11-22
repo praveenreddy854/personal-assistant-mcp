@@ -4,9 +4,13 @@
 import { mkdir, writeFile, chmod } from 'node:fs/promises';
 import { dirname } from 'node:path';
 
-const url = process.env.MEMORY_URL;
-if (!url || !/^https?:\/\/.+\/mcp$/.test(url)) throw new Error('Set MEMORY_URL to the full server URL ending in /mcp');
-if (!url.startsWith('https://') && !/^http:\/\/(localhost|127\.0\.0\.1)[:/]/.test(url)) throw new Error('MEMORY_URL must use HTTPS outside localhost');
+// Parse instead of pattern-matching: "http://localhost:x@evil.example/mcp" must not pass as localhost.
+let parsed;
+try { parsed = new URL(process.env.MEMORY_URL ?? ''); } catch { throw new Error('Set MEMORY_URL to the full server URL ending in /mcp'); }
+if (parsed.username || parsed.password || parsed.search || parsed.hash || parsed.pathname !== '/mcp') throw new Error('MEMORY_URL must be a plain https://<host>/mcp URL');
+const local = ['localhost', '127.0.0.1'].includes(parsed.hostname);
+if (parsed.protocol !== 'https:' && !(parsed.protocol === 'http:' && local)) throw new Error('MEMORY_URL must use HTTPS outside localhost');
+const url = parsed.href;
 
 const name = 'personal-memory', version = '0.1.0', description = 'Shared family memory over MCP';
 const owner = { name: 'Personal Memory' };

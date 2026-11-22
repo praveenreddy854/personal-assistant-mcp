@@ -126,3 +126,10 @@ it('stores only a hashed member key, not the name, on member records',async()=>{
   expect(self.member_key).not.toContain(name.toLowerCase());
   expect(await admin.removeMember(name)).toBe(1);
 });
+
+it('refuses family-vault form sessions that have no member grant',async()=>{
+  const actor=memberActor(await admin.addMember(`Legacy-${randomUUID()}`)),forms=new FormService(memory);
+  const started=await forms.start(actor,'Legacy form','https://forms.example');
+  await db.withVault(actor,true,tx=>tx.set('form_sessions',started.session_id,{grant:null}));
+  await expect(forms.pair(started.pairing_code,'https://forms.example')).rejects.toMatchObject({code:'invalid_capture_secret'});
+});
