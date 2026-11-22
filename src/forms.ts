@@ -18,7 +18,7 @@ export class FormService {
       const subject=subjectId??tx.self??(await tx.find('entities',{where:{is_self:true},limit:1}))[0]?.id;
       requireThat(subject&&await tx.get('entities',subject),'not_found','The form subject is not in this vault.',404);
       const id=randomUUID(),pair=secret(tx.vault,id);
-      await tx.put('form_sessions',id,{subject_id:subject,title,page_origin:pageOrigin,pair_hash:digest(pair),pair_expires:new Date(Date.now()+600000).toISOString(),capture_hash:null,capture_expires:null,status:'draft',revision:0,checkpoint_revision:null,checkpoint_at:null,snapshot_challenge:null,submission_status:'unknown'});
+      await tx.put('form_sessions',id,{subject_id:subject,grant:tx.grant??null,title,page_origin:pageOrigin,pair_hash:digest(pair),pair_expires:new Date(Date.now()+600000).toISOString(),capture_hash:null,capture_expires:null,status:'draft',revision:0,checkpoint_revision:null,checkpoint_at:null,snapshot_challenge:null,submission_status:'unknown'});
       return {session_id:id,pairing_code:pair,pairing_expires_in_seconds:600,
         instruction:'Open the capture extension on this form tab, enter the server URL and this one-time pairing code, and start capture. Only this origin and tab are captured. Finalize when the user says the answers are final.'};
     });

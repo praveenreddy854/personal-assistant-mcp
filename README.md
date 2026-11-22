@@ -45,8 +45,8 @@ npm run add-member -- Ravi       # prints Ravi's token once; send it to him priv
 npm run remove-member -- Ravi    # revokes the token on the next request; his memories stay
 ```
 
-- **Storage:** only a SHA-256 hash of each token is stored, in the `identities` container. A lost token can’t be recovered; remove and re-add the member to issue a new one.
-- **Checking:** every vault access looks up the token hash in Cosmos, so revocation is immediate. A wrong or revoked token gets 403 `not_invited`.
+- **Storage:** only a SHA-256 hash of each token is stored, in the `identities` container. A lost token can’t be recovered; remove and re-add the member (same name) to issue a new one. They keep their existing memories.
+- **Checking:** every vault access looks up the token hash in Cosmos, so revocation is immediate. A wrong or revoked token gets 401, and removing a member also stops their unfinished form captures.
 - **Approvals:** any member can change or forget anything, but only the member who proposed a change can approve it.
 - **Limits:** tokens don’t expire. Browser-based connectors (Claude.ai, ChatGPT) usually require OAuth and may not accept a pasted token; CLI and editor clients work.
 

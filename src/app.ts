@@ -81,7 +81,7 @@ For form filling, start_form and pair the browser integration so manual edits ar
 }
 
 export function createApp(config:Config,memory:MemoryService,options:{authenticate?:(req:Request)=>Promise<Actor>}={}) {
-  const app=express(),forms=new FormService(memory),authenticate=options.authenticate??authenticator(config);
+  const app=express(),forms=new FormService(memory),authenticate=options.authenticate??authenticator(config,undefined,actor=>memory.db.hasGrant(actor));
   app.disable('x-powered-by');
   app.use((_req,res,next)=>{res.set({'Cache-Control':'no-store','X-Content-Type-Options':'nosniff','Referrer-Policy':'no-referrer'});next();});
   app.use(express.json({limit:'2mb'}));

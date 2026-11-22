@@ -25,7 +25,10 @@ export class MemoryService {
       const recent=await tx.find('claims',{where,orderBy:'recorded_at',descending:true,limit:501});
       const matching=terms.length?await tx.find('claims',{where,terms,limit:501}):[];
       const claims=[...new Map([...matching,...recent].map(c=>[c.id,c])).values()];
-      const entities=await tx.find('entities',{orderBy:'is_self',descending:true,limit:1001});
+      const listed=await tx.find('entities',{orderBy:'is_self',descending:true,limit:1001});
+      // Keep the signed-in member first so a large vault can't push "me" out of the bounded snapshot.
+      const own=tx.self?await tx.get('entities',tx.self):undefined;
+      const entities=own?[own,...listed.filter(e=>e.id!==own.id)]:listed;
       return {revision:tx.revision,claims:claims.slice(0,500).map(claimRow),entities:markSelf(tx,entities.slice(0,1000)),truncated:claims.length>500||entities.length>1000};
     });
   }
@@ -350,8 +353,8 @@ export class MemoryService {
       const combined=[...new Map([...seeds,...neighbors.slice(0,200)].map(c=>[c.id,claimRow(c)])).values()];
       if(!combined.length)return {claims:[],evidence:[],entities:[],truncated:false,revision:tx.revision};
       const evidence=await this.hydrateEvidence(tx,await tx.find('claim_evidence',{where:{claim_id:combined.map(c=>c.id)}}));
-      const entities=await tx.find('entities',{where:{id:unique(combined.flatMap(c=>[c.subject_id,c.object_id]).filter(Boolean))}});
-      return {claims:combined,evidence:evidence.map(e=>({claim_id:e.claim_id,source_id:e.source_id,quote:e.quote,relation:e.relation,kind:e.kind,recorded_at:e.recorded_at,redacted:e.redacted})) as Evidence[],entities:entities.map(e=>({id:e.id,kind:e.kind,name:e.name})),truncated,revision:tx.revision};
+      const entities=await tx.find('entities',{where:{id:unique([...combined.flatMap(c=>[c.subject_id,c.object_id]),...(tx.self?[tx.self]:[])].filter(Boolean))}});
+      return {claims:combined,evidence:evidence.map(e=>({claim_id:e.claim_id,source_id:e.source_id,quote:e.quote,relation:e.relation,kind:e.kind,recorded_at:e.recorded_at,redacted:e.redacted})) as Evidence[],entities:markSelf(tx,entities).map(e=>({id:e.id,kind:e.kind,name:e.name,...(tx.self?{is_self:e.is_self}:{})})),truncated,revision:tx.revision};
     });
     if(!records.claims.length)return {answer:'I do not have remembered information supporting an answer.',claims:[],evidence:[],missing_information:[question],conflicts:[],level,truncated:false};
     const answer=await this.ai.answer(question,level,[records]);

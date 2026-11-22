@@ -45,6 +45,8 @@ export class Tx {
   readonly vault:string;revision:number;
   /** Entity ID of the signed-in family member; undefined for single-owner vaults. */
   self?:string;
+  /** Directory grant of the signed-in family member, used to revoke capture credentials. */
+  grant?:string;
   private cache=new Map<string,Row|null>();
   private existing=new Set<string>();
   readonly changes=new Map<string,OperationInput>();
@@ -168,9 +170,10 @@ export class Database {
     const owner=ownerKey(actor),mapping=await this.read(this.directory,owner,owner);
     requireThat(mapping,'not_invited','This identity has not been invited, or its access was revoked.',403);
     // Family members share a vault; the directory mapping is the access grant.
-    if(mapping.self_id)return this.withVaultId(mapping.vault_id,write,tx=>{tx.self=mapping.self_id;return run(tx);});
+    if(mapping.self_id)return this.withVaultId(mapping.vault_id,write,tx=>{tx.self=mapping.self_id;tx.grant=owner;return run(tx);});
     return this.withVaultId(mapping.vault_id,write,run,owner);
   }
+  async hasGrant(actor:Actor){const owner=ownerKey(actor);return Boolean(await this.read(this.directory,owner,owner));}
   async addMember(name:string){
     const token=randomBytes(32).toString('base64url'),owner=ownerKey(memberActor(token));
     let family=await this.read(this.directory,'family','family');
@@ -181,9 +184,13 @@ export class Database {
       catch(error:any){if(error.code!==409)throw error;}
       family=await this.read(this.directory,'family','family');
     }
-    const self=randomUUID();
-    await this.withVaultId(family.vault_id,true,async tx=>{
-      await tx.put('entities',self,{id:self,kind:'person',name,aliases:[],is_self:false,member:true,search_tokens:tokens(name)});tx.revision++;
+    // Re-adding a member (e.g. after a lost token) reuses their person so their history stays together.
+    const self=await this.withVaultId(family.vault_id,true,async tx=>{
+      const existing=(await tx.find('entities',{where:{member:true,name},limit:1}))[0];
+      if(existing)return existing.id as string;
+      const id=randomUUID();
+      await tx.put('entities',id,{id,kind:'person',name,aliases:[],is_self:false,member:true,search_tokens:tokens(name)});tx.revision++;
+      return id;
     });
     await this.directory.items.create({id:owner,vault_id:family.vault_id,self_id:self,member_name:name});
     return token;
@@ -200,6 +207,8 @@ export class Database {
     return this.withVaultId(vault!,true,async tx=>{
       const session=await tx.get('form_sessions',id!),hash=pair?'pair_hash':'capture_hash',expires=pair?'pair_expires':'capture_expires';
       requireThat(session&&session.status==='draft'&&session[hash]===digest(secret)&&Date.parse(session[expires])>Date.now(),'invalid_capture_secret','The pairing code or capture token is invalid, expired, or revoked.',401);
+      // Family forms stop accepting capture once the member who started them is removed.
+      requireThat(!session.grant||await this.read(this.directory,session.grant,session.grant),'invalid_capture_secret','The pairing code or capture token is invalid, expired, or revoked.',401);
       return run(tx,session);
     });
   }
